@@ -144,7 +144,7 @@ class Logging(object):
 
     def setup_task_logger(self, loglevel=None, logfile=None, format=None,
             colorize=None, task_name=None, task_id=None, propagate=False,
-            app=None, **kwargs):
+            app=None, logger_name=None, **kwargs):
         """Setup the task logger.
 
         If `logfile` is not specified, then `sys.stderr` is used.
@@ -157,7 +157,8 @@ class Logging(object):
         if colorize is None:
             colorize = self.supports_color(logfile)
 
-        logger = self._setup_logger(self.get_task_logger(loglevel, task_name),
+        logger = self._setup_logger(self.get_task_logger(loglevel, logger_name
+                                                         or task_name),
                                     logfile, format, colorize, **kwargs)
         logger.propagate = int(propagate)    # this is an int for some reason.
                                              # better to not question why.
@@ -168,8 +169,9 @@ class Logging(object):
                                       "task_name": task_name})
 
     def _is_configured(self, logger):
-        return logger.handlers and not getattr(
+        result = logger.handlers and not getattr(
                 logger, "_rudimentary_setup", False)
+        return result
 
     def redirect_stdouts_to_logger(self, logger, loglevel=None,
             stdout=True, stderr=True):
