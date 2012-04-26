@@ -353,14 +353,12 @@ class BaseTask(object):
     def start_strategy(self, app, consumer):
         return instantiate(self.Strategy, self, app, consumer)
 
-    def get_logger(self, loglevel=None, logfile=None, propagate=False,
-                   logger_name=None, **kwargs):
+    def get_logger(self, **kwargs):
         """Get task-aware logger object."""
-        return self._get_app().log.setup_task_logger(
-            loglevel=self.request.loglevel if loglevel is None else loglevel,
-            logfile=self.request.logfile if logfile is None else logfile,
-            logger_name=logger_name, propagate=propagate, task_name=self.name,
-            task_id=self.request.id)
+        logger = get_logger(self.name)
+        if logger.parent is logging.root:
+            logger.parent = get_logger("celery.task")
+        return logger
 
     def establish_connection(self, connect_timeout=None):
         """Establish a connection to the message broker."""

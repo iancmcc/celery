@@ -102,65 +102,8 @@ class Logging(object):
                           _MP_FORK_LOGFORMAT_=format)
         return receivers
 
-    def setup(self, loglevel=None, logfile=None, redirect_stdouts=False,
-            redirect_level="WARNING"):
-        handled = self.setup_logging_subsystem(loglevel=loglevel,
-                                               logfile=logfile)
-        if not handled:
-            logger = self.get_default_logger()
-            if redirect_stdouts:
-                self.redirect_stdouts_to_logger(logger,
-                                loglevel=redirect_level)
-        os.environ.update(
-            CELERY_LOG_LEVEL=str(loglevel) if loglevel else "",
-            CELERY_LOG_FILE=str(logfile) if logfile else "",
-            CELERY_LOG_REDIRECT="1" if redirect_stdouts else "",
-            CELERY_LOG_REDIRECT_LEVEL=str(redirect_level))
-
-    def _detect_handler(self, logfile=None):
-        """Create log handler with either a filename, an open stream
-        or :const:`None` (stderr)."""
-        logfile = sys.__stderr__ if logfile is None else logfile
-        if hasattr(logfile, "write"):
-            return logging.StreamHandler(logfile)
-        return WatchedFileHandler(logfile)
-
-    def get_default_logger(self, loglevel=None, name="celery"):
-        """Get default logger instance.
-
-        :keyword loglevel: Initial log level.
-
-        """
-        logger = logging.getLogger(name)
-        if loglevel is not None:
-            logger.setLevel(mlevel(loglevel))
-        return logger
-
-    def setup_logger(self, loglevel=None, logfile=None,
-            format=None, colorize=None, name="celery", root=True,
-            app=None, **kwargs):
-        """Setup the :mod:`multiprocessing` logger.
-
-        If `logfile` is not specified, then `sys.stderr` is used.
-
-        Returns logger object.
-
-        """
-        loglevel = mlevel(loglevel or self.loglevel)
-        format = format or self.format
-        if colorize is None:
-            colorize = self.supports_color(logfile)
-
-        if not root or self.app.conf.CELERYD_HIJACK_ROOT_LOGGER:
-            return self._setup_logger(self.get_default_logger(loglevel, name),
-                                      logfile, format, colorize, **kwargs)
-        self.setup_logging_subsystem(loglevel, logfile,
-                                     format, colorize, **kwargs)
-        return self.get_default_logger(name=name)
-
-    def setup_task_logger(self, loglevel=None, logfile=None, format=None,
-            colorize=None, task_name=None, task_id=None, propagate=False,
-            app=None, logger_name=None, **kwargs):
+    def setup_task_loggers(self, loglevel=None, logfile=None, format=None,
+            colorize=None, propagate=False, **kwargs):
         """Setup the task logger.
 
         If `logfile` is not specified, then `sys.stderr` is used.
@@ -173,21 +116,16 @@ class Logging(object):
         if colorize is None:
             colorize = self.supports_color(logfile)
 
-        logger = self._setup_logger(self.get_task_logger(loglevel, logger_name
-                                                         or task_name),
-                                    logfile, format, colorize, **kwargs)
+        logger = self.setup_handlers(get_logger("celery.task"),
+                                     logfile, format, colorize,
+                                     formatter=TaskFormatter, **kwargs)
+        logger.setLevel(loglevel)
         logger.propagate = int(propagate)    # this is an int for some reason.
                                              # better to not question why.
         signals.after_setup_task_logger.send(sender=None, logger=logger,
                                      loglevel=loglevel, logfile=logfile,
                                      format=format, colorize=colorize)
-        return LoggerAdapter(logger, {"task_id": task_id,
-                                      "task_name": task_name})
-
-    def _is_configured(self, logger):
-        result = logger.handlers and not getattr(
-                logger, "_rudimentary_setup", False)
-        return result
+        return logger
 
     def redirect_stdouts_to_logger(self, logger, loglevel=None,
             stdout=True, stderr=True):
