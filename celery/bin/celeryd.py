@@ -73,17 +73,11 @@
 """
 from __future__ import absolute_import
 
-if __name__ == "__main__" and globals().get("__package__") is None:
-    __package__ = "celery.bin.celeryd"
-
 import sys
 
-try:
-    from celery.concurrency.processes.forking import freeze_support
-except ImportError:  # pragma: no cover
-    freeze_support = lambda: True  # noqa
+from billiard import freeze_support
 
-from .base import Command, Option
+from celery.bin.base import Command, Option
 
 
 class WorkerCommand(Command):

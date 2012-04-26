@@ -22,12 +22,12 @@ class module(MagicModule):
         return self.task(*args, **kwargs)
 
 
-old_module, new_module = recreate_module(__name__,
+old_module, new_module = recreate_module(__name__,  # pragma: no cover
     by_module={
         "celery.task.base":   ["BaseTask", "Task", "PeriodicTask",
                                "task", "periodic_task"],
-        "celery.task.sets":   ["chain", "group", "TaskSet", "subtask"],
-        "celery.task.chords": ["chord"],
+        "celery.canvas":      ["chain", "group", "chord", "subtask"],
+        "celery.task.sets":   ["TaskSet"],
     },
     base=module,
     __package__="celery.task",

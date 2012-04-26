@@ -6,22 +6,31 @@ import sys
 import threading
 import traceback
 
-try:
-    from multiprocessing import current_process
-    from multiprocessing import util as mputil
-except ImportError:
-    current_process = mputil = None  # noqa
+from billiard import current_process, util as mputil
+from kombu.log import get_logger as _get_logger, LOG_LEVELS
 
 from .encoding import safe_str, str_t
 from .term import colored
 
 _process_aware = False
+is_py3k = sys.version_info[0] == 3
 
-LOG_LEVELS = dict(logging._levelNames)
-LOG_LEVELS["FATAL"] = logging.FATAL
-LOG_LEVELS[logging.FATAL] = "FATAL"
 
-is_py3k = sys.version_info >= (3, 0)
+# Sets up our logging hierarchy.
+#
+# Every logger in the celery package inherits from the "celery"
+# logger, and every task logger inherits from the "celery.task"
+# logger.
+base_logger = logger = _get_logger("celery")
+mp_logger = _get_logger("multiprocessing")
+
+
+def get_logger(name):
+    l = _get_logger(name)
+    if logging.root not in (l, l.parent) and l is not base_logger:
+        l.parent = base_logger
+    return l
+task_logger = get_logger("celery.task")
 
 
 def mlevel(level):
@@ -154,40 +163,27 @@ class LoggingProxy(object):
         return None
 
 
-def _patch_logger_class():
+def ensure_process_aware_logger():
     """Make sure process name is recorded when loggers are used."""
+    global _process_aware
+    if not _process_aware:
+        logging._acquireLock()
+        try:
+            _process_aware = True
+            Logger = logging.getLoggerClass()
+            if getattr(Logger, '_process_aware', False):  # pragma: no cover
+                return
 
-    try:
-        from multiprocessing.process import current_process
-    except ImportError:
-        current_process = None  # noqa
-
-    logging._acquireLock()
-    try:
-        OldLoggerClass = logging.getLoggerClass()
-        if not getattr(OldLoggerClass, '_process_aware', False):
-
-            class ProcessAwareLogger(OldLoggerClass):
+            class ProcessAwareLogger(Logger):
                 _process_aware = True
 
                 def makeRecord(self, *args, **kwds):
-                    record = OldLoggerClass.makeRecord(self, *args, **kwds)
-                    if current_process:
-                        record.processName = current_process()._name
-                    else:
-                        record.processName = ""
+                    record = Logger.makeRecord(self, *args, **kwds)
+                    record.processName = current_process()._name
                     return record
             logging.setLoggerClass(ProcessAwareLogger)
-    finally:
-        logging._releaseLock()
-
-
-def ensure_process_aware_logger():
-    global _process_aware
-
-    if not _process_aware:
-        _patch_logger_class()
-        _process_aware = True
+        finally:
+            logging._releaseLock()
 
 
 def get_multiprocessing_logger():

@@ -191,10 +191,6 @@ Can be one of the following:
     Use `Redis`_ to store the results.
     See :ref:`conf-redis-result-backend`.
 
-* tyrant
-    Use `Tokyo Tyrant`_ to store the results.
-    See :ref:`conf-tyrant-result-backend`.
-
 * amqp
     Send results back as AMQP messages
     See :ref:`conf-amqp-result-backend`.
@@ -212,7 +208,6 @@ Can be one of the following:
 .. _`memcached`: http://memcached.org
 .. _`MongoDB`: http://mongodb.org
 .. _`Redis`: http://code.google.com/p/redis/
-.. _`Tokyo Tyrant`: http://1978th.net/tokyotyrant/
 .. _`Cassandra`: http://cassandra.apache.org/
 
 .. setting:: CELERY_RESULT_SERIALIZER
@@ -383,42 +378,6 @@ setting:
                                     "behaviors": {"tcp_nodelay": True}}
 
 .. _`pylibmc`: http://sendapatch.se/projects/pylibmc/
-
-.. _conf-tyrant-result-backend:
-
-Tokyo Tyrant backend settings
------------------------------
-
-.. note::
-
-    The Tokyo Tyrant backend requires the :mod:`pytyrant` library:
-    http://pypi.python.org/pypi/pytyrant/
-
-This backend requires the following configuration directives to be set:
-
-.. setting:: TT_HOST
-
-TT_HOST
-~~~~~~~
-
-Host name of the Tokyo Tyrant server.
-
-.. setting:: TT_PORT
-
-TT_PORT
-~~~~~~~
-
-The port the Tokyo Tyrant server is listening to.
-
-
-Example configuration
-~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-    CELERY_RESULT_BACKEND = "tyrant"
-    TT_HOST = "localhost"
-    TT_PORT = 1978
 
 .. _conf-redis-result-backend:
 
@@ -1563,7 +1522,18 @@ CELERYBEAT_MAX_LOOP_INTERVAL
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The maximum number of seconds :mod:`~celery.bin.celerybeat` can sleep
-between checking the schedule.  Default is 300 seconds (5 minutes).
+between checking the schedule.
+
+
+The default for this value is scheduler specific.
+For the default celerybeat scheduler the value is 300 (5 minutes),
+but for e.g. the django-celery database scheduler it is 5 seconds
+because the schedule may be changed externally, and so it must take
+changes to the schedule into account.
+
+Also when running celerybeat embedded (:option:`-B`) on Jython as a thread
+the max interval is overridden and set to 1 so that it's possible
+to shut down in a timely manner.
 
 
 .. _conf-celerymon:

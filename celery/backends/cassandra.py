@@ -2,21 +2,24 @@
 """celery.backends.cassandra"""
 from __future__ import absolute_import
 
-try:
+try:  # pragma: no cover
     import pycassa
     from thrift import Thrift
     C = pycassa.cassandra.ttypes
-except ImportError:
-    pycassa = None
+except ImportError:  # pragma: no cover
+    pycassa = None   # noqa
 
 import socket
 import time
 
 from celery import states
 from celery.exceptions import ImproperlyConfigured
+from celery.utils.log import get_logger
 from celery.utils.timeutils import maybe_timedelta, timedelta_seconds
 
 from .base import BaseDictBackend
+
+logger = get_logger(__name__)
 
 
 class CassandraBackend(BaseDictBackend):
@@ -46,8 +49,6 @@ class CassandraBackend(BaseDictBackend):
 
         """
         super(CassandraBackend, self).__init__(**kwargs)
-        self.logger = self.app.log.setup_logger(
-                            name="celery.backends.cassandra")
 
         self.expires = kwargs.get("expires") or maybe_timedelta(
                                     self.app.conf.CELERY_TASK_RESULT_EXPIRES)
@@ -104,7 +105,7 @@ class CassandraBackend(BaseDictBackend):
                     Thrift.TException), exc:
                 if time.time() > ts:
                     raise
-                self.logger.warn('Cassandra error: %r. Retrying...', exc)
+                logger.warn('Cassandra error: %r. Retrying...', exc)
                 time.sleep(self._retry_wait)
 
     def _get_column_family(self):

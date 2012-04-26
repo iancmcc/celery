@@ -12,8 +12,11 @@
 
 from __future__ import absolute_import
 
+import logging
 import sys
 import threading
+
+from kombu.utils import cached_property
 
 from celery import current_app
 from celery import states
@@ -23,6 +26,7 @@ from celery.result import EagerResult
 from celery.utils import fun_takes_kwargs, uuid, maybe_reraise
 from celery.utils.functional import mattrgetter, maybe_list
 from celery.utils.imports import instantiate
+from celery.utils.log import get_logger
 from celery.utils.mail import ErrorMail
 
 from .annotations import resolve_all as resolve_all_annotations
@@ -703,11 +707,15 @@ class BaseTask(object):
                                                     task_name=self.name)
 
     def subtask(self, *args, **kwargs):
-        """Returns :class:`~celery.task.sets.subtask` object for
+        """Returns :class:`~celery.subtask` object for
         this task, wrapping arguments and execution options
         for a single task invocation."""
-        from celery.task.sets import subtask
+        from celery.canvas import subtask
         return subtask(self, *args, **kwargs)
+
+    def s(self, *args, **kwargs):
+        """``.s(*a, **k) -> .subtask(a, k)``"""
+        return self.subtask(args, kwargs)
 
     def update_state(self, task_id=None, state=None, meta=None):
         """Update task state.
@@ -816,6 +824,10 @@ class BaseTask(object):
     def __repr__(self):
         """`repr(task)`"""
         return "<@task: %s>" % (self.name, )
+
+    @cached_property
+    def logger(self):
+        return self.get_logger()
 
     @property
     def __name__(self):

@@ -15,7 +15,7 @@ DEFAULT_ATTRS = set(["__file__", "__path__", "__doc__", "__all__"])
 
 # im_func is no longer available in Py3.
 # instead the unbound method itself can be used.
-if sys.version_info[0] == 3:
+if sys.version_info[0] == 3:  # pragma: no cover
     def fun_of_method(method):
         return method
 else:
@@ -54,8 +54,6 @@ COMPAT_MODULES = {
         "log": {
             "get_default_logger": "log.get_default_logger",
             "setup_logger": "log.setup_logger",
-            "setup_task_logger": "log.setup_task_logger",
-            "get_task_logger": "log.get_task_logger",
             "setup_loggig_subsystem": "log.setup_logging_subsystem",
             "redirect_stdouts_to_logger": "log.redirect_stdouts_to_logger",
         },
@@ -71,6 +69,17 @@ COMPAT_MODULES = {
             "tasks": "tasks",
         },
     },
+    "celery.task": {
+        "control": {
+            "broadcast": "control.broadcast",
+            "rate_limit": "control.rate_limit",
+            "time_limit": "control.time_limit",
+            "ping": "control.ping",
+            "revoke": "control.revoke",
+            "discard_all": "control.discard_all",
+            "inspect": "control.inspect",
+        }
+    }
 }
 
 
@@ -124,19 +133,20 @@ class MagicModule(ModuleType):
         return list(set(self.__all__) | DEFAULT_ATTRS)
 
 
-def create_module(name, attrs, cls_attrs=None, pkg=None,
-        bases=(MagicModule, ), prepare_attr=None):
+def create_module(name, attrs, cls_attrs=None, pkg=None, base=MagicModule,
+        prepare_attr=None):
     fqdn = '.'.join([pkg.__name__, name]) if pkg else name
     cls_attrs = {} if cls_attrs is None else cls_attrs
 
     attrs = dict((attr_name, prepare_attr(attr) if prepare_attr else attr)
                     for attr_name, attr in attrs.iteritems())
-    module = sys.modules[fqdn] = type(name, bases, cls_attrs)(fqdn)
+    module = sys.modules[fqdn] = type(name, (base, ), cls_attrs)(fqdn)
     module.__dict__.update(attrs)
     return module
 
 
-def recreate_module(name, compat_modules=(), by_module={}, direct={}, **attrs):
+def recreate_module(name, compat_modules=(), by_module={}, direct={},
+        base=MagicModule, **attrs):
     old_module = sys.modules[name]
     origins = get_origins(by_module)
     compat_modules = COMPAT_MODULES.get(name, ())
@@ -146,7 +156,7 @@ def recreate_module(name, compat_modules=(), by_module={}, direct={}, **attrs):
                   _object_origins=origins,
                   __all__=tuple(set(reduce(operator.add, map(tuple, [
                                 compat_modules, origins, direct, attrs])))))
-    new_module = create_module(name, attrs, cls_attrs=cattrs)
+    new_module = create_module(name, attrs, cls_attrs=cattrs, base=base)
     new_module.__dict__.update(dict((mod, get_compat_module(new_module, mod))
                                      for mod in compat_modules))
     return old_module, new_module
@@ -159,8 +169,9 @@ def get_compat_module(pkg, name):
             return Proxy(getappattr, (attr.split('.'), ))
         return attr
 
-    return create_module(name, COMPAT_MODULES[pkg.__name__][name],
-                         pkg=pkg, prepare_attr=prepare)
+    attrs = dict(COMPAT_MODULES[pkg.__name__][name])
+    attrs["__all__"] = attrs.keys()
+    return create_module(name, attrs, pkg=pkg, prepare_attr=prepare)
 
 
 def get_origins(defs):

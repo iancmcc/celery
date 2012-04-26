@@ -22,7 +22,6 @@
     celery.concurrency
     celery.concurrency.solo
     celery.concurrency.processes
-    celery.concurrency.processes.pool
     celery.concurrency.eventlet
     celery.concurrency.gevent
     celery.concurrency.base
@@ -36,7 +35,6 @@
     celery.backends.mongodb
     celery.backends.redis
     celery.backends.cassandra
-    celery.backends.tyrant
     celery.task.trace
     celery.app.abstract
     celery.app.annotations

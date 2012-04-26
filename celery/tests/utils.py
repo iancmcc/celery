@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+from __future__ import with_statement
 
 try:
     import unittest
@@ -11,6 +12,7 @@ except AttributeError:
 import importlib
 import logging
 import os
+import platform
 import re
 import sys
 import time
@@ -20,14 +22,17 @@ try:
 except ImportError:  # py3k
     import builtins  # noqa
 
-from functools import wraps
 from contextlib import contextmanager
+from functools import partial, wraps
+from types import ModuleType
 
 import mock
 from nose import SkipTest
+from kombu.log import NullHandler
+from kombu.utils import nested
 
 from ..app import app_or_default
-from ..utils.compat import WhateverIO, LoggerAdapter
+from ..utils.compat import WhateverIO
 from ..utils.functional import noop
 
 from .compat import catch_warnings
@@ -208,15 +213,7 @@ class AppCase(Case):
 
 
 def get_handlers(logger):
-    if isinstance(logger, LoggerAdapter):
-        return logger.logger.handlers
-    return logger.handlers
-
-
-def set_handlers(logger, new_handlers):
-    if isinstance(logger, LoggerAdapter):
-        logger.logger.handlers = new_handlers
-    logger.handlers = new_handlers
+    return [h for h in logger.handlers if not isinstance(h, NullHandler)]
 
 
 @contextmanager
@@ -224,11 +221,11 @@ def wrap_logger(logger, loglevel=logging.ERROR):
     old_handlers = get_handlers(logger)
     sio = WhateverIO()
     siohandler = logging.StreamHandler(sio)
-    set_handlers(logger, [siohandler])
+    logger.handlers = [siohandler]
 
     yield sio
 
-    set_handlers(logger, old_handlers)
+    logger.handlers = old_handlers
 
 
 @contextmanager
@@ -414,25 +411,30 @@ def patch(module, name, mocked):
 
 
 @contextmanager
-def platform_pyimp(replace=None):
-    import platform
-    has_prev = hasattr(platform, "python_implementation")
-    prev = getattr(platform, "python_implementation", None)
-    if replace:
-        platform.python_implementation = replace
+def replace_module_value(module, name, value=None):
+    has_prev = hasattr(module, name)
+    prev = getattr(module, name, None)
+    if value:
+        setattr(module, name, value)
     else:
         try:
-            delattr(platform, "python_implementation")
+            delattr(module, name)
         except AttributeError:
             pass
     yield
     if prev is not None:
-        platform.python_implementation = prev
+        setattr(sys, name, prev)
     if not has_prev:
         try:
-            delattr(platform, "python_implementation")
+            delattr(module, name)
         except AttributeError:
             pass
+pypy_version = partial(
+    replace_module_value, sys, "pypy_version_info",
+)
+platform_pyimp = partial(
+    replace_module_value, platform, "python_implementation",
+)
 
 
 @contextmanager
@@ -440,27 +442,6 @@ def sys_platform(value):
     prev, sys.platform = sys.platform, value
     yield
     sys.platform = prev
-
-
-@contextmanager
-def pypy_version(value=None):
-    has_prev = hasattr(sys, "pypy_version_info")
-    prev = getattr(sys, "pypy_version_info", None)
-    if value:
-        sys.pypy_version_info = value
-    else:
-        try:
-            delattr(sys, "pypy_version_info")
-        except AttributeError:
-            pass
-    yield
-    if prev is not None:
-        sys.pypy_version_info = prev
-    if not has_prev:
-        try:
-            delattr(sys, "pypy_version_info")
-        except AttributeError:
-            pass
 
 
 @contextmanager
@@ -472,8 +453,6 @@ def reset_modules(*modules):
 
 @contextmanager
 def patch_modules(*modules):
-    from types import ModuleType
-
     prev = {}
     for mod in modules:
         prev[mod], sys.modules[mod] = sys.modules[mod], ModuleType(mod)
@@ -483,3 +462,70 @@ def patch_modules(*modules):
             sys.modules.pop(name, None)
         else:
             sys.modules[name] = mod
+
+
+class create_pidlock(object):
+    instance = [None]
+
+    def __init__(self, file):
+        self.file = file
+        self.instance[0] = self
+
+    def acquire(self):
+        self.acquired = True
+
+        class Object(object):
+            def release(self):
+                pass
+
+        return Object()
+
+
+@contextmanager
+def mock_module(*names):
+    prev = {}
+
+    class MockModule(ModuleType):
+
+        def __getattr__(self, attr):
+            setattr(self, attr, Mock())
+            return ModuleType.__getattribute__(self, attr)
+
+    mods = []
+    for name in names:
+        prev[name] = sys.modules.get(name)
+        mod = sys.modules[name] = MockModule(name)
+        mods.append(mod)
+    yield mods
+    for name in names:
+        if prev[name]:
+            sys.modules[name] = prev[name]
+
+
+@contextmanager
+def mock_context(mock, typ=Mock):
+    context = mock.return_value = Mock()
+    context.__enter__ = typ()
+    context.__exit__ = typ()
+
+    def on_exit(*x):
+        if x[0]:
+            raise x[0], x[1], x[2]
+    context.__exit__.side_effect = on_exit
+    context.__enter__.return_value = context
+    yield context
+    context.reset()
+
+
+@contextmanager
+def mock_open(typ=WhateverIO, side_effect=None):
+    with mock.patch("__builtin__.open") as open_:
+        with mock_context(open_) as context:
+            if side_effect is not None:
+                context.__enter__.side_effect = side_effect
+            val = context.__enter__.return_value = typ()
+            yield val
+
+
+def patch_many(*targets):
+    return nested(*[mock.patch(target) for target in targets])
